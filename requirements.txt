@@ -1,0 +1,7 @@
+tkinter==8.6
+requests==2.26.0
+nipyapi==0.19.1
+customtkinter
+os
+warnings
+urllib3
