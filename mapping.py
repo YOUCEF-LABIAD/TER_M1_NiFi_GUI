@@ -1,7 +1,11 @@
+import os
 from nipyapi import canvas, nifi
 
 
-def create_Mapping_process(file_path):
+def create_Mapping_process(file_path,proc_group_test, mapping_dict):
+    #recuperer le chemin courant
+    cwd= os.getcwd()
+    print("cwd:", cwd)
     # Create a new process group for the conversion process
     root_pg = canvas.get_root_pg_id()
     pg = canvas.create_process_group(root_pg, "Mapping process group")
@@ -9,88 +13,246 @@ def create_Mapping_process(file_path):
     #ExecuteStreamCommand
     #ExecuteStreamCommand
 
-    # Create the ExecuteStreamCommand processor (ExcelToCsv)
-    GetFile_processor = canvas.create_processor(
-        pg,
-        "org.apache.nifi.processors.standard.GetFile",
-        ""
-    ) 
-    Excel_to_csv_processor = canvas.create_processor(
-        pg,
-        "org.apache.nifi.processors.standard.ExecuteStreamCommand",
-        ""
-    )    
-    UpdateAttribute_processor = canvas.create_processor(
-        pg,
-        "org.apache.nifi.processors.standard.UpdateAttribute",
-        ""
-    )   
-    Hijri_Converter_processor = canvas.create_processor(
-        pg,
-        "org.apache.nifi.processors.standard.ExecuteStreamCommand",
-        ""
-    )   
-    Mapping_processor = canvas.create_processor(
-        pg,
-        "org.apache.nifi.processors.standard.QueryRecord",
-        ""
-    )
-    Code_ASCII_processor = canvas.create_processor(
-        pg,
-        "org.apache.nifi.processors.standard.ReplaceText",
-        ""
-    )
-    Special_Characters_processor = canvas.create_processor(
-        pg,
-        "org.apache.nifi.processors.standard.ReplaceText",
-        ""
-    )   
-    Spaces_processor = canvas.create_processor(
-        pg,
-        "org.apache.nifi.processors.standard.ReplaceText",
-        ""
-    )
-    Deduplication_processor = canvas.create_processor(
-        pg,
-        "org.apache.nifi.processors.standard.ExecuteStreamCommand",
-        ""
-    )
-    FileDateCreation_processor = canvas.create_processor(
-        pg,
-        "org.apache.nifi.processors.standard.ReplaExecuteStreamCommandceText",
-        ""
-    )
-    # Set properties for the ExecuteStreamCommand processor
-    canvas.set_property(Excel_to_csv_processor, "Command Arguments Strategy", "Command Arguments Property")
-    canvas.set_property(Excel_to_csv_processor, "Command Arguments", 'convert_excel_to_csv.py;"${absolute.path}${filename}"')
-    canvas.set_property(Excel_to_csv_processor, "Ignore STDIN", "true")
-    canvas.set_property(Excel_to_csv_processor, "Command Path", "/usr/bin/python3")
-    canvas.set_property(Excel_to_csv_processor, "Working Directory", "./scripts")
-    canvas.set_property(Excel_to_csv_processor, "Argument Delimiter", ";")
+   #getfile
+    processor_param = nifi.models.DocumentedTypeDTO(type='org.apache.nifi.processors.standard.GetFile')
+    update_param = nifi.models.processor_config_dto.ProcessorConfigDTO()
+    GetFile_processor = canvas.create_processor(proc_group_test,processor_param,(0,0), name=None, config=None)
+    config = nifi.models.ProcessorConfigDTO()
+    config.auto_terminated_relationships = ['success']
+    config.properties = {
+        'Input Directory': cwd + '/datain',
+        'File Filter': ".*\\.xlsx$"
+    }
+    canvas.update_processor(GetFile_processor, config, refresh=True)
+    print("GetFile processor created :", GetFile_processor.id)
+    #TODO: when the user chooses a file, find a way to separate the path to file anf filename
     
-    # Set properties for the UpdateAttribute processor
-    canvas.set_property(UpdateAttribute_processor, "Key1", "Value1")
-    canvas.set_property(UpdateAttribute_processor, "Key2", "Value2")
-    # Set properties for the Hijri_Converter_processor processor
-    # Set properties for the Mapping_processor processor
-    # Set properties for the Code_ASCII_processor processor
-    # Set properties for the Special_Characters_processor processor
-    # Set properties for the Spaces_processor processor
-    # Set properties for the Deduplication_processor processor
-    # Set properties for the FileDateCreation_processor processor
+    #Excel_to_csv_processor
+    processor_param = nifi.models.DocumentedTypeDTO(type='org.apache.nifi.processors.standard.ExecuteStreamCommand')
+    update_param = nifi.models.processor_config_dto.ProcessorConfigDTO()
+    Excel_to_csv_processor = canvas.create_processor(proc_group_test,processor_param,(500,100), name="Excel_to_csv", config=None)
+    config = nifi.models.ProcessorConfigDTO()
+    config.auto_terminated_relationships = ['nonzero status','original']
+    config.properties = {
+        
+        'Command Arguments Strategy': 'Command Arguments Property',
+        'Command Arguments': 'convert_excel_to_csv.py;"${absolute.path}${filename}"',
+        'Command Path' : '/usr/bin/python3',
+        'Ignore STDIN':'true',
+        'Working Directory':cwd+'/NifiScripts',
+        'Argument Delimiter':';',
+        'Max Attribute Length':'256'
+    }
+    canvas.update_processor(Excel_to_csv_processor, config, refresh=True)
+    print("PutFile processor created :", Excel_to_csv_processor.id)
+    #Creating connexions
+    canvas.create_connection(GetFile_processor,Excel_to_csv_processor)
+    print("     GetFile - EXcel-to-csv created :" )
+
+    
+    #Rajoute_extension_processor
+    processor_param = nifi.models.DocumentedTypeDTO(type='org.apache.nifi.processors.standard.UpdateAttribute')
+    Rajoute_extension_processor = canvas.create_processor(proc_group_test,processor_param,(500,200), name="Rajoute_extension", config=None)
+    config = nifi.models.ProcessorConfigDTO()
+    config.auto_terminated_relationships = []
+    config.properties = {
+        'Store State': 'Do not store state',
+        'Cache Value Lookup Cache Size': '100',
+        'filename' : '${filename:substringBeforeLast(".")}.csv',
+        'mime.type':'text/csv'
+    }
+    canvas.update_processor(Rajoute_extension_processor, config, refresh=True)
+    print(" processor created :", Rajoute_extension_processor.id)
+    #Creating connexions
+    canvas.create_connection(Excel_to_csv_processor,Rajoute_extension_processor)
+    print("     Excel_to_csv-Rajoute-extension :" ) 
+
+    
+    
+    #hijri_Date_processor 
+    processor_param = nifi.models.DocumentedTypeDTO(type='org.apache.nifi.processors.standard.ExecuteStreamCommand')
+    hijri_Date_processor = canvas.create_processor(proc_group_test,processor_param,(500,300), name="hijri_Date", config=None)
+    config = nifi.models.ProcessorConfigDTO()
+    config.auto_terminated_relationships = ['nonzerostatus','original']
+    config.properties = {
+        'Command Arguments Strategy': 'Command Arguments Property',
+        'Command Arguments': cwd+'/NifiScripts/hijri.py',
+        'Command Path':'/usr/bin/python3',
+        'Ignore STDIN' : 'false',
+        'Argument Delimiter':';',
+        'Max Attribute Length':'256'
+    }
+    canvas.update_processor(hijri_Date_processor , config, refresh=True)
+    print("hijri_Date_processor created :", hijri_Date_processor .id)
+    #Creating connexions
+    canvas.create_connection(Rajoute_extension_processor ,hijri_Date_processor)
+    print("hijri_Date_processor ,mapping_processor created :" )
+
     
 
-    # Connect the process group to other processors or output ports
-    canvas.create_connection(Excel_to_csv_processor, UpdateAttribute_processor)
-    canvas.create_connection(UpdateAttribute_processor, Hijri_Converter_processor)
-    canvas.create_connection(Hijri_Converter_processor, Mapping_processor)
-    canvas.create_connection(Mapping_processor,Code_ASCII_processor )
+    #Mapping_processor 
+    
+    mapping_query = "SELECT"
+    +mapping_dict(['PatientNumber']) + " as PatientNumber ",
+    +mapping_dict(['Hospital']) + " as Hospital ",
+    +mapping_dict(['DateOfBirth']) + " as DateOfBirth ",
+    +mapping_dict(['Gender']) + " as Gender ",
+    +mapping_dict(['PatientDeceased']) + " as PatientDeceased ",
+    +mapping_dict(['DateofDeath']) + " as DateofDeath ",
+    +mapping_dict(['PlaceOfBirth']) + " as PlaceOfBirth ",
+    +mapping_dict(['EthnicOrigin']) + " as EthnicOrigin ",
+    +mapping_dict(['Nationality']) + " as Nationality ",
+    #patient_name
+    +mapping_dict(['Title']) + " as Title ",
+    +mapping_dict(['MothersName']) + " as MothersName ",
+    +mapping_dict(['MothersPreName']) + " as MothersPreName ",
+    +mapping_dict(['FathersName']) + " as FathersName ",
+    +mapping_dict(['FathersPreName']) + " as FathersPreName ",
+    +mapping_dict(['FamilyDoctor']) + " as FamilyDoctor ",
+    +mapping_dict(['FileDateCreation']) + " as FileDateCreation ",#? pas dans le mapping
+    +mapping_dict(['NationalID']) + " as NationalID ",
+    #+"SUBSTRING(PATIENT_NAME, 1, POSITION(' ' IN PATIENT_NAME) - 1) AS LastName,"
+    #+"SUBSTRING(PATIENT_NAME, POSITION(' ' IN PATIENT_NAME) + 1) AS FirstName,"
+    +"FROM FLOWFILE"
+    #create mapping query
+    processor_param = nifi.models.DocumentedTypeDTO(type='org.apache.nifi.processors.standard.QueryRecord')
+    mapping_processor = canvas.create_processor(proc_group_test,processor_param,(500,400), name="mapping_processor", config=None)
+    config = nifi.models.ProcessorConfigDTO()
+    config.auto_terminated_relationships = ['original','failure']
+    config.properties = {
+        'Record Reader': cwd+'/dataout',
+        'Record Writer': 'replace',
+        'Include Zero Record FlowFiles':'true',
+        'Cache Schema' :'true',
+        'Default Decimal Precision':'10',
+        'Default Decimal Scale' : '0'
+    }
+    canvas.update_processor(mapping_processor, config, refresh=True)
+    print("PutFile processor created :", mapping_processor.id)
+    #Creating connexions
+    canvas.create_connection(hijri_Date_processor,mapping_processor)
+    print("     GetFile - PutFile created :" )
+
+    
+
+    #Code_ASCII_processor
+    processor_param = nifi.models.DocumentedTypeDTO(type='org.apache.nifi.processors.standard.ReplaceText')
+    Code_ASCII_processor = canvas.create_processor(proc_group_test,processor_param,(500,500), name=None, config=None)
+    config = nifi.models.ProcessorConfigDTO()
+    config.auto_terminated_relationships = ['failure']
+    config.properties = {
+        'Replacement Strategy': 'Regex Replace',
+        'Search Value': '[^\\x00-\\x7F]+',
+        'Character Set' : 'UTF-8',
+        'Maximum Buffer Size' : '1 MB',
+        'Evaluation Mode' : 'Line-by-Line',
+        'Line-by-Line Evaluation Mode' : 'All'
+
+    }
+    canvas.update_processor(Code_ASCII_processor, config, refresh=True)
+    print(" Code_ASCII_processor created :", Code_ASCII_processor.id)
+    #Creating connexions
+    canvas.create_connection(mapping_processor,Code_ASCII_processor)
+
+
+
+    
+    #Special_Characters_processor
+    processor_param = nifi.models.DocumentedTypeDTO(type='org.apache.nifi.processors.standard.ReplaceText')
+    Special_Characters_processor = canvas.create_processor(proc_group_test,processor_param,(500,600), name=None, config=None)
+    config = nifi.models.ProcessorConfigDTO()
+    config.auto_terminated_relationships = ['failure']
+    config.properties = {
+        'Replacement Strategy': 'Regex Replace',
+        'Search Value': '[^\w\s,-:]',
+        'Character Set' : 'UTF-8',
+        'Maximum Buffer Size' : '1 MB',
+        'Evaluation Mode' : 'Entire text',
+        'Line-by-Line Evaluation Mode' : 'All'
+       
+    }
+    canvas.update_processor( Special_Characters_processor, config, refresh=True)
+    print(" Special_Characters_processor created :", Special_Characters_processor.id)
+    #Creating connexions
     canvas.create_connection(Code_ASCII_processor, Special_Characters_processor)
-    canvas.create_connection(Special_Characters_processor, Spaces_processor)
-    canvas.create_connection(Spaces_processor, Deduplication_processor)
-    canvas.create_connection(Deduplication_processor, FileDateCreation_processor)
+    
+
+    #Spaces_processor
+    spaces_processor_param = nifi.models.DocumentedTypeDTO(type='org.apache.nifi.processors.standard.PutFile')
+    spaces_processor_param = nifi.models.processor_config_dto.ProcessorConfigDTO()
+    spaces_processor = canvas.create_processor(proc_group_test,processor_param,(500,700), name=None, config=None)
+    config = nifi.models.ProcessorConfigDTO()
+    config.auto_terminated_relationships = ['failure']
+    config.properties = {
+        'Special_Characters': 'Regex Replace',
+        'Search Value': '[ ]{2,}',
+        'Character Set' : 'UTF-8',
+        'Maximum Buffer Size':'1 MB',
+        'Evaluation Mode':'Line-by-Line',
+        'Line-by-Line Evaluation Mode':'All'
+    }
+    canvas.update_processor(spaces_processor_param,config, refresh=True)
+    print("PutFile processor created :", spaces_processor.id)
+    #Creating connexions
+    canvas.create_connection(Special_Characters_processor,spaces_processor)
+    print("Special_Characters - spaces_processor created :" )
 
     
+    
+
+    #Deduplication_processor
+    processor_param = nifi.models.DocumentedTypeDTO(type='org.apache.nifi.processors.standard.ExecuteStreamCommand')
+    Deduplication_processor = canvas.create_processor(proc_group_test,processor_param,(500,800), name=None, config=None)
+    config = nifi.models.ProcessorConfigDTO()
+    config.auto_terminated_relationships = ['nonzero status','failure']
+    config.properties = {
+        
+        'Command Arguments Strategy': 'Command Arguments Property',
+        'Command Arguments': 'deduplicate.py',
+        'Command Path': '/usr/bin/python3',
+        'Ignore STDIN':'false',
+        'Working Directory':cwd+'/NifiScripts',
+        'Argument Delimiter':';',
+        'Max Attribute Length':'256'
+    }
+    canvas.update_processor(Deduplication_processor, config, refresh=True)
+    print("PutFile processor created :", Deduplication_processor.id)
+    #Creating connexions
+    canvas.create_connection(spaces_processor,Deduplication_processor)
+    print("     spaces_processor,Deduplication_processor created :" )
+
+
+
+    #FileDateCreation_processor
+    processor_param = nifi.models.DocumentedTypeDTO(type='org.apache.nifi.processors.standard.ExecuteStreamCommand')
+    FileDateCreation_processor = canvas.create_processor(proc_group_test,processor_param,(500,900), name=None, config=None)
+    config = nifi.models.ProcessorConfigDTO()
+    config.auto_terminated_relationships = ['nonzero status','failure']
+    config.properties = {
+        
+        'Command Arguments Strategy': 'Command Arguments Property',
+        'Command Arguments': 'FileDateCreation.py',
+        'Command Path': '/usr/bin/python3',
+        'Ignore STDIN':'false',
+        'Working Directory':cwd+'/NifiScripts',
+        'Argument Delimiter':';',
+        'Max Attribute Length':'256'
+    }
+    canvas.update_processor(FileDateCreation_processor, config, refresh=True)
+    print("PutFile processor created :", FileDateCreation_processor.id)
+    #Creating connexions
+    canvas.create_connection(Deduplication_processor,FileDateCreation_processor)
+    print("Deduplication_processor,FileDateCreation_processor created :" )
+    
+
+
+
+
+
+    #TODO
+
+    
+
 
     
     # Create the ConvertRecord processor
@@ -101,108 +263,17 @@ def create_Mapping_process(file_path):
     )
 
     # Set properties for the ConvertRecord processor
-    canvas.set_property(convert_to_csv_processor, "Record Reader", "CSV Reader")
-    canvas.set_property(convert_to_csv_processor, "Record Writer", "CSV Record Set Writer")
-
 
     
 
-    # Create input and output ports
-    input_port = canvas.create_port(pg, "INPUT_PORT", nifi.models.PortDTO.TYPE_INPUT)
-    output_port = canvas.create_port(pg, "OUTPUT_PORT", nifi.models.PortDTO.TYPE_OUTPUT)
-
-    # Connect ports to processors
-    canvas.create_connection(input_port, convert_to_csv_processor)
-    canvas.create_connection(convert_to_csv_processor, output_port)
     
     # Schedule the process group to start
     canvas.schedule(pg, True)
 
-# Example usage
-create_Mapping_process("/path/to/your/file.csv")
 
 
 
 
-
-
-
-import nipyapi
-
-# Connect to NiFi instance
-nipyapi.config.nifi_config.host = 'http://localhost:8080/nifi-api'
-
-# Start the process group or processor
-def start_process_group(process_group_id):
-    nipyapi.canvas.schedule_process_group(process_group_id, True)
-
-def start_processor(processor_id):
-    nipyapi.canvas.schedule_processor(processor_id, True)
-
-# Monitor the process or processor
-def monitor_process_group(process_group_id):
-    status = nipyapi.canvas.get_process_group_status(process_group_id)
-    # Extract relevant information from the status object and monitor the process group
-
-def monitor_processor(processor_id):
-    status = nipyapi.canvas.get_processor_status(processor_id)
-    # Extract relevant information from the status object and monitor the processor
-
-# Handle errors
-def handle_errors(process_group_id):
-    error_messages = nipyapi.canvas.list_process_group_errors(process_group_id)
-    if error_messages:
-        # Handle the error messages appropriately
-        pass
-
-# Stop the process group or processor
-def stop_process_group(process_group_id):
-    nipyapi.canvas.schedule_process_group(process_group_id, False)
-
-def stop_processor(processor_id):
-    nipyapi.canvas.schedule_processor(processor_id, False)
 
 # Example usage
-pg_id = 'your-process-group-id'  # Replace with the actual process group ID
-processor_id = 'your-processor-id'  # Replace with the actual processor ID
-
-start_process_group(pg_id)
-# or start_processor(processor_id)
-
-monitor_process_group(pg_id)
-# or monitor_processor(processor_id)
-
-handle_errors(pg_id)
-
-stop_process_group(pg_id)
-# or stop_processor(processor_id)
-
-
-
-
-
-
-
-
-
-
-#to access finished flowfile and write into a file
-
-import nipyapi
-
-# Connect to NiFi instance
-nipyapi.config.nifi_config.host = 'http://localhost:8080/nifi-api'
-
-# Get the output port ID
-output_port_id = 'output-port-id'  # Replace with the actual output port ID
-
-# Get the content from the output port
-content = nipyapi.nifi.output_port.get_output_port_status(output_port_id).aggregate_snapshot.contents
-
-# Process the content as per your requirements
-# For example, you can write the content to a file
-with open('output.txt', 'wb') as file:
-    for chunk in content.stream():
-        file.write(chunk)
-
-print("Data retrieved successfully.")
+#create_Mapping_process("/path/to/your/file.csv")
